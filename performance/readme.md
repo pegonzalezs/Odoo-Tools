@@ -9,26 +9,26 @@ This tool allows you to measure different scopes of your Odoo environment
 * pip install erppeek (http://erppeek.readthedocs.io/en/latest/api.html)
  
 ## Command-Line Arguments
-### --help, -h
+### -h, --help, 
 Tool help
 
 ### -m, --multithread
 Each user operations will be executed in a different thread, do not hesitate to do a top in the odoo server and analyse results with or without multithreading
 
 ### -s, --save
-The result of the execution will be storaged in history/output_<time_date>.xlsx 
+The result of the execution will be saved in history/output_<time_date>.xlsx 
 
-### -i, --inputfile,
-Provide a CSV file with login, password in 1st, 2nd column of the users involved in the performance test 
+### -c, --config
+configuration file 
 
 ## Output file
 Measure time execution per user
 
-## Operations config file
+## Configuration File
 
-Configure your operations inside the config file
-* Define the connection with your server
+* Define the connection with your server 
 * Include the login/password of the users that will run all the operations
+* Configure your operations inside the config file
 * It allows to quickly create functions that will call erppeek
 * The input of one operation can be the result of a previous one
 * Write your custom function in the python code and reference it in the configuration file. It will be directly executed without updating the motor of the script
