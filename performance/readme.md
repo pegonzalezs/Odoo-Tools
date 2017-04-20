@@ -139,12 +139,12 @@ USER LOGIN   CURRENT TIME(s)
 TOTAL =>41.29
 ```
 
-First interesting thing looking at the results is that users 1116, 1395 execution takes much more time than the rest of users to search and read on res_partner. 
-So it is obvious that it we found a weak point to be fixed
+First interesting thing looking at the results is that users 1116, 1395 execution take much more time than the rest of users doing exactly the same operations (to search and read on res_partner). 
+So it is obvious that was found a weak point to be improved in our Odoo instance
 
 As it's not the goal of the present use case, lets continue focusing in the multithread execution option  
 
-So the script is runned with the -m option and comparing it with the previous result already saved in the history folder
+So the analyser must be runned with the -m option and comparing it with the previous result already saved in the history folder
 ```shell
 ./performance.py -m --compare-with history/output_20042017-220326.xlsx
 ``` 
@@ -178,12 +178,10 @@ So the script is runned with the -m option and comparing it with the previous re
 | TOTAL 	| 41.29 	| 7.55 	| -81.71% 	|
 
 
-Conclusions analysing result:
+The conclusions are:
 * All users expend more time. Not true!. The execution threads runs the code line that measure the time later.
 * With the same amount of users and the same operation the multithread option makes Odoo server run in parallel the operations
-* As you see, this execution took IN TOTAL almost 6 times less han the previous one
-
-
+* As you see, this execution took IN TOTAL almost 6 times less han the previous one with the same amount of users and the same operations
 
 
 
