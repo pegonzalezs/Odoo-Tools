@@ -22,7 +22,6 @@
 import erppeek
 import argparse
 import sys
-import csv
 import time
 import os
 import re
@@ -33,6 +32,7 @@ except:
     from StringIO import StringIO
 
 import xlsxwriter
+import xlrd
 import collections
 import threading
 import ConfigParser
@@ -70,6 +70,12 @@ class Performance(object):
             '-c', '--config', default='operations.ini',
             help='Configuration file including information object, method, arguments, groups'
         )
+
+        parser.add_argument(
+            '-C', '--compare-with', default=False,
+            help='Provide an excel file comparing current execution with the results of the excel file provided'
+        )
+
         return parser.parse_args(args)
 
     def read_operations(self):
@@ -167,7 +173,6 @@ class Performance(object):
         return
 
     def my_super_long_function(self):
-        print "My Super Long Function"
         return True
 
     def run(self):
@@ -175,13 +180,21 @@ class Performance(object):
         Connecting each user to ERP and execute the operations to be measured
         :return:
         """
+        threads = []
         t_start = time.time()
         for login, password in self.users.iteritems():
             if self.options.multithread:
-                threading.Thread(target=self.do_operations, args=(login, password)).start()
+                threads.append(threading.Thread(target=self.do_operations, args=(login, password)))
             else:
                 self.do_operations(login, password)
-        self.measures.setdefault('TOTAL', time.time() - t_start)
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        self.measures.setdefault('TOTAL', "{:.2f}".format(time.time() - t_start))
         print "Execution time => {}".format(time.time() - t_start)
         return
 
@@ -200,20 +213,65 @@ class Performance(object):
             file_name = os.path.join(os.getcwd(), 'history', 'output_{}.xlsx'.format(time.strftime("%d%m%Y-%H%M%S")))
         return file_name
 
+    def compare_with(self):
+
+        if not self.options.compare_with:
+            return
+
+        # Read the results
+        result = {}
+        xl_workbook = xlrd.open_workbook(self.options.compare_with)
+        sheet_names = xl_workbook.sheet_names()
+        xl_sheet = xl_workbook.sheet_by_name(sheet_names[0])
+        col = xl_sheet.col_values(0)
+        col2 = xl_sheet.col_values(1)
+        for index, value in enumerate(col):
+            result.setdefault(value, col2[index])
+        return result
+
+
     def write_output(self):
         """
         Save in Excel a sorted collection of Users / Execution time
         :return:
         """
+        previous_result = self.compare_with()
         od = collections.OrderedDict(sorted(self.measures.items()))
         with open(self.get_file_path(), "w+") as fh:
             workbook = xlsxwriter.Workbook(fh)
             bold = workbook.add_format({'bold': True})
+            italic = workbook.add_format({'italic': True})
+            red = workbook.add_format({'bold': True})
+            red.set_font_color('red')
+            green = workbook.add_format({'bold': True})
+            green.set_font_color('green')
             worksheet1 = workbook.add_worksheet()
-            worksheet1.write('A1', 'USERS', bold)
-            worksheet1.write('A2', 'TIME(s)', bold)
-            worksheet1.write_row(0, 1, od.keys(), bold)
-            worksheet1.write_row(1, 1, od.values())
+            worksheet1.set_column(0, 0, 20)
+            worksheet1.set_column(1, len(od.keys()), 15)
+            worksheet1.write('A1', 'USER LOGIN', bold)
+            if previous_result:
+                worksheet1.write('B1', 'PREVIOUS TIME(s)', bold)
+                worksheet1.write('C1', 'CURRENT TIME(s)', bold)
+                worksheet1.write('D1', 'IMPROVEMENT(%)', bold)
+                col = 2
+            else:
+                worksheet1.write('B1', 'CURRENT TIME(s)', bold)
+                col = 1
+            row = 1
+            for user, time in od.iteritems():
+                worksheet1.write(row, 0, user, bold)
+                if previous_result and user in previous_result.keys():
+                    worksheet1.write(row, col-1, float(previous_result[user]), italic)
+                    improvement = (float(time) - float(previous_result[user]))/float(previous_result[user]) * 100
+                    if float(previous_result[user]) > float(time):
+                        worksheet1.write(row, col, time, green)
+                        worksheet1.write(row, col+1, "{:.2f}%".format(improvement), green)
+                    else:
+                        worksheet1.write(row, col, time, red)
+                        worksheet1.write(row, col + 1, "{:.2f}%".format(improvement), red)
+                else:
+                    worksheet1.write(row, col, time)
+                row += 1
             workbook.close()
         return
 
