@@ -1,9 +1,9 @@
 import xmlrpc.client
 
-url = "http://odootst.fernuni.ch:8069"
-db = "fsch_test"
-username = "1533"
-password = ""
+url = "http://dominio.es:8069"
+db = "db_name"
+username = "user_login"
+password = "password"
 
 import openpyxl
 from openpyxl import Workbook
@@ -163,6 +163,7 @@ class TranslationUnification(object):
                     _logger.error(f"Error updating record {record_id} for language {lang_code}, field {self.args.field}, value {value}: {str(e)}")
 
         _logger.info("###### Importing operation completed #######")
+
 
 if __name__ == '__main__':
     translationuni = TranslationUnification(sys.argv[1:])
