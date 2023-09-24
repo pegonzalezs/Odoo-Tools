@@ -1,7 +1,10 @@
-# click-odoo -d fsch_test -c /etc/odoo-server.conf 
-# --logfile=/var/log/odoo/unitranslationlog.log ./translation_unification.py
-# --exportTranslations --user-id 0000 --model-id 1111 --field_id 2222
-#
+import xmlrpc.client
+
+url = "http://odootst.fernuni.ch:8069"
+db = "fsch_test"
+username = "1533"
+password = ""
+
 import openpyxl
 from openpyxl import Workbook
 
@@ -19,121 +22,151 @@ _logger.addHandler(ch)
 
 class TranslationUnification(object):
     def __init__(self, sysArgs):
+        
+        
         self.args = argparse.ArgumentParser()
         self.args.add_argument(
             '-e',
             '--exportTranslations',
-            action='store',
-            required=True,
-            help='Export or import mode'
+            action='store_true',
+            help='Export mode'
         )
         self.args.add_argument(
             '-i',
             '--importTranslations',
-            action='store',
-            required=True,
-            help='Export or import mode'
+            metavar="FILENAME",
+            help='Import mode. Must be followed by the name of an Excel file.'
         )
         self.args.add_argument(
             '-uid',
             '--user-id',
             type=int,
-            required=True,
             help='User ID representing the language'
         )
         self.args.add_argument(
-            '-mid',
-            '--model-id',
+            '-m',
+            '--model',
             type=str,
-            required=True,
-            help='ID of the model for translation'
+            help='Model name, as example product.product'
         )
         self.args.add_argument(
-            '-fid',
-            '--field-id',
+            '-f',
+            '--field',
             type=str,
-            required=True,
-            help='ID of the field to translate'
+            help='Field name, as example, description or name'
         )
         self.args = self.args.parse_args()
 
+        # Handle connection
+        self.url = "http://odootst.fernuni.ch:8069"
+        self.db = "fsch_test"
+        self.username = "1533"
+        self.password = "T2F1+6heRFEi"
+
+        # Step 1: Authenticate and get the user id
+        common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+        self.uid = common.authenticate(db, username, password, {})
+
+        # Step 2: Connect to the object that you want to manipulate
+        self.models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url), allow_none=True)
+
+        # Step 3: Fetch the list of active languages
+        self.active_languages = self.models.execute_kw(self.db, self.uid, self.password, 'res.lang', 'search_read', [[]], {'fields': ['code', 'name']})
+
+        if self.args.exportTranslations and (not self.args.model or not self.args.field):
+            raise argparse.ArgumentError(None, "--model and --field are required when using -e/--exportTranslations")
+        
+        # Check if the importTranslations argument is provided without a file name
+        #if self.args.importTranslations is None:
+        #    raise argparse.ArgumentError(None, "Error: Please provide an Excel file name using the -i option")
 
     def export_translations(self):
-        # Initialize an empty dictionary to store translation data
-        translation_data = {}
-
-        # Log in as the user with the specified language preference
-        user = self.env['res.users'].browse(self.args.user_id)
-        lang_code = user.lang or 'en_US'  # Default to English if no language is set
-
-        # Set the language context for the user
-        with self.env.user.change_lang(lang_code):
-            # Query records for the specified model and field
-            records = self.env[self.args.model_id].search([])
-
-            # Collect translation data for each record
-            for record in records:
-                translation_value = record[self.args.field_id]
-
-                # Store translation data in the dictionary
-                translation_data.setdefault(record.id, {})[lang_code] = translation_value
-
-        # Export `translation_data` to an Excel file using openpyxl
+        _logger.info("###### Exporting operation #######")
         wb = Workbook()
         ws = wb.active
+        ws.title = "Translations"
+        
+        # Getting all the records for the model
+        records = self.models.execute_kw(
+            self.db, self.uid, self.password, self.args.model, 'search_read',
+            [],
+            {
+                'fields': ['id', self.args.field],
+                'context': {'lang': 'en_US'}  # Assuming English as a base language, you can adjust as needed
+            }
+        )
 
-        # Create headers for the Excel sheet
-        headers = ['Record ID'] + [lang_code]
-        ws.append(headers)
-
-        # Add translation data to the Excel sheet
-        for record_id, translations in translation_data.items():
-            row_data = [record_id] + [translations.get(lang_code, '')]
+        if not records:
+            _logger.error(f"No records found on model {self.args.model}")
+            return
+        
+        # Preparing the header row
+        header = ["Record ID"]
+        for lang in self.active_languages:
+            header.append(lang['code'])
+        ws.append(header)
+        
+        for record in records:
+            record_id = record['id']
+            row_data = [record_id]
+            
+            for lang in self.active_languages:
+                lang_code = lang['code']
+                # Fetching field value for the specific language
+                field_value = self.models.execute_kw(
+                    self.db, self.uid, self.password, self.args.model, 'read',
+                    [record_id],
+                    {
+                        'fields': [self.args.field],
+                        'context': {'lang': lang_code}
+                    }
+                )[0][self.args.field]
+                row_data.append(field_value)
+            _logger.info(f"New row:{row_data}")
             ws.append(row_data)
 
-        # Save the Excel file
-        wb.save('translations.xlsx')
-
-        logging.info("Translations exported successfully. File saved as 'translations.xlsx'")
+        wb.save("translations.xlsx")
 
     def import_translations(self):
-        # Import translations from Excel
+        _logger.info("###### Importing operation #######")
+        
+        wb = openpyxl.load_workbook("translations.xlsx")
+        ws = wb.active
 
-        wb = openpyxl.load_workbook('translations.xlsx')
-        sheet = wb.active
+        # Assuming the first row contains the header
+        header = [cell.value for cell in ws[1]]
+        
+        if "Record ID" not in header:
+            _logger.error("Invalid Excel file. 'Record ID' column not found!")
+            return
 
-        # Log in as the user with the specified language preference
-        user = self.env['res.users'].browse(self.args.user_id)
-        lang_code = user.lang or 'en_US'  # Default to English if no language is set
+        for row in ws.iter_rows(min_row=2, values_only=True):  # Skip header row
+            record_id = row[0]
+            translations = {header[i]: value for i, value in enumerate(row) if i != 0 and value}
 
-        # Iterate through rows in the Excel sheet
-        for row in sheet.iter_rows(min_row=2, values_only=True):
-            record_id, translation_value = row
+            for lang_code, value in translations.items():
+                if lang_code not in [lang['code'] for lang in self.active_languages]:
+                    _logger.warning(f"Language '{lang_code}' is not active or doesn't exist in the system!")
+                    continue
+                # Updating the translation for this language
+                
+                print(f"Row information: {row}")
+                print(f"Lang Code {lang_code}, value {value}")
+                try:
+                    self.models.execute_kw(
+                        self.db, self.uid, self.password, self.args.model, 'write',
+                        [record_id, {self.args.field: value}],
+                        {'context': {'lang': lang_code}}
+                    )
+                    _logger.info(f"Updated record {record_id} for language {lang_code} with value: {value}")
+                except Exception as e:
+                    _logger.error(f"Error updating record {record_id} for language {lang_code}, field {self.args.field}, value {value}: {str(e)}")
 
-            # Set the language context for the user
-            with self.env.user.change_lang(lang_code):
-                # Update the translation for the specified record and field
-                record = self.env[self.args.model_id].browse(record_id)
-                record[self.args.field_id] = translation_value
-
-        # Commit the changes
-        self._cr.commit()
-
-        logging.info("Translations imported successfully")
-
-    def run(self):
-        if self.args.mode == 'export':
-            self.export_translations()
-        elif self.args.mode == 'import':
-            self.import_translations()
-        else:
-            logging.error("Invalid mode. Use 'export' or 'import'.")
+        _logger.info("###### Importing operation completed #######")
 
 if __name__ == '__main__':
     translationuni = TranslationUnification(sys.argv[1:])
     if translationuni.args.exportTranslations:
-        file = translationuni.args.duplicates and translationuni.args.duplicates[0]
         translationuni.export_translations()
     if translationuni.args.importTranslations:
-        file = translationuni.args.sort and translationuni.args.sort[0]
         translationuni.import_translations()
